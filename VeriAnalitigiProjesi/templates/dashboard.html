@@ -1,0 +1,118 @@
+{% extends 'layout.html' %} {% block content %}
+<div class="container-fluid">
+  <h2 class="mb-4 fw-bold text-primary">Yönetici Paneli</h2>
+
+  <div class="row mb-4">
+    <div class="col-md-8">
+      <div class="card shadow-sm h-100">
+        <div class="card-header fw-bold">En Popüler Ürünler</div>
+        <div class="card-body" style="height: 300px; position: relative">
+          <canvas id="popChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-header fw-bold">Cinsiyet Dağılımı</div>
+        <div class="card-body" style="height: 300px; position: relative">
+          <canvas id="genderChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm border-primary">
+        <div class="card-header bg-primary text-white fw-bold">
+          <small>SEGMENT 1</small><br />
+          Kim Ne Kadar Alıyor? (Cinsiyet Kırılımlı)
+        </div>
+        <div class="card-body" style="height: 400px; position: relative">
+          <canvas id="segmentGenderChart"></canvas>
+        </div>
+        <div class="card-footer text-muted small">
+          * Grafik çubuklarının üzerine gelince o grubun
+          <b>Ortalama Yaşını</b> görebilirsiniz.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm border-success">
+        <div class="card-header bg-success text-white fw-bold">
+          <small>SEGMENT 2</small><br />
+          Bu Gruplar Hangi Kategorileri Alıyor?
+        </div>
+        <div class="card-body" style="height: 400px; position: relative">
+          <canvas id="segmentCatChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // POP CHART
+  new Chart(document.getElementById('popChart'), {
+      type: 'bar',
+      data: {
+          labels: {{ pop_data.labels | tojson }},
+          datasets: [
+              { label: 'Tıklama', data: {{ pop_data.clicks | tojson }}, backgroundColor: 'rgba(54, 162, 235, 0.5)' },
+              { label: 'Satın Alma', data: {{ pop_data.purchases | tojson }}, backgroundColor: 'rgba(75, 192, 192, 0.8)' }
+          ]
+      },
+      options: { maintainAspectRatio: false, responsive: true }
+  });
+
+  // GENDER CHART
+  new Chart(document.getElementById('genderChart'), {
+      type: 'pie',
+      data: {
+          labels: {{ gender_data.labels | tojson }},
+          datasets: [{ data: {{ gender_data.data | tojson }}, backgroundColor: ['#36A2EB', '#FF6384'] }]
+      },
+      options: { maintainAspectRatio: false, responsive: true }
+  });
+
+  // SEGMENT 1
+  const segGenderData = {{ segment_gender_data | tojson }};
+  new Chart(document.getElementById('segmentGenderChart'), {
+      type: 'bar',
+      data: {
+          labels: segGenderData.labels,
+          datasets: [
+              { label: 'Erkek', data: segGenderData.male, backgroundColor: '#36A2EB', stack: 's1' },
+              { label: 'Kadın', data: segGenderData.female, backgroundColor: '#FF6384', stack: 's1' }
+          ]
+      },
+      options: {
+          indexAxis: 'y',
+          maintainAspectRatio: false,
+          responsive: true,
+          plugins: { tooltip: { callbacks: { footer: (i) => 'Ort. Yaş: ' + segGenderData.avg_age[i[0].dataIndex] } } },
+          scales: { x: { stacked: true }, y: { stacked: true } }
+      }
+  });
+
+  // SEGMENT 2
+  const segCatData = {{ segment_cat_data | tojson }};
+  const colors = ['#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF'];
+  const datasets = segCatData.datasets.map((ds, i) => ({ ...ds, backgroundColor: colors[i % colors.length], stack: 's2' }));
+
+  new Chart(document.getElementById('segmentCatChart'), {
+      type: 'bar',
+      data: { labels: segCatData.labels, datasets: datasets },
+      options: {
+          indexAxis: 'y',
+          maintainAspectRatio: false,
+          responsive: true,
+          scales: { x: { stacked: true }, y: { stacked: true } }
+      }
+  });
+</script>
+{% endblock %}

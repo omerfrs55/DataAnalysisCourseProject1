@@ -1,0 +1,105 @@
+{% extends 'layout.html' %} {% block content %}
+<div class="container">
+  <div class="row mb-5 align-items-center">
+    <div class="col-md-6 text-center">
+      <div class="card border-0 shadow p-3">
+        <img src="{{ current_image }}" class="img-fluid rounded" />
+      </div>
+    </div>
+    <div class="col-md-6">
+      <h1 class="fw-bold">{{ product.name }}</h1>
+      <h4 class="text-muted">{{ product.category }}</h4>
+      <h2 class="text-danger fw-bold my-3">{{ product.price }} TL</h2>
+      <div class="card bg-light border-0 p-4">
+        <p class="fw-bold">Renk Seç:</p>
+        <div class="d-flex flex-wrap gap-2 mb-4">
+          {% for color in colors %}
+          <a
+            href="{{ url_for('product_detail', product_id=product.id, color=color) }}"
+            class="btn {% if selected_color == color %}btn-dark{% else %}btn-outline-dark{% endif %} px-4"
+          >
+            {{ color }}
+          </a>
+          {% endfor %}
+        </div>
+        <button
+          onclick="buyDetail('{{ selected_color }}')"
+          class="btn btn-success btn-lg w-100 fw-bold"
+        >
+          HEMEN SATIN AL
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-5">
+    <h3 class="mb-4">📊 Ürün Analizleri</h3>
+    <div class="col-md-6 mb-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-header fw-bold">Genel Renk Tercihi</div>
+        <div class="card-body" style="height: 300px; position: relative">
+          <canvas id="colorDistChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 mb-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-header fw-bold">Yaş Gruplarına Göre Renk Seçimi</div>
+        <div class="card-body" style="height: 300px; position: relative">
+          <canvas id="ageColorChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  function buyDetail(color) {
+      fetch('/buy_now', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ product_id: {{ product.id }}, color: color })
+      })
+      .then(res => res.json())
+      .then(data => {
+          // BİLDİRİMİ GÖSTER
+          showNotification(data.message);
+
+          // Grafikler güncellensin diye sayfayı yeniliyoruz.
+          // Bildirimi görmek için yenilemeyi biraz geciktirebiliriz veya
+          // kullanıcı manuel yenilesin diyorsan bu satırı silebilirsin.
+          // Ama Live istiyorsan kalmalı.
+          setTimeout(() => location.reload(), 2000);
+      });
+  }
+
+  const colorDist = {{ color_dist | tojson }};
+  new Chart(document.getElementById('colorDistChart'), {
+      type: 'pie',
+      data: {
+          labels: Object.keys(colorDist),
+          datasets: [{
+              data: Object.values(colorDist),
+              backgroundColor: ['#333', '#eee', 'blue', 'red', 'green']
+          }]
+      },
+      options: { maintainAspectRatio: false, responsive: true }
+  });
+
+  const ageMatrix = {{ age_color_matrix | tojson }};
+  const colorsList = {{ colors | tojson }};
+  const ageLabels = Object.keys(ageMatrix);
+  const ageDatasets = colorsList.map(c => ({
+      label: c,
+      data: ageLabels.map(grp => ageMatrix[grp][c]),
+      backgroundColor: c==='Siyah'?'#333':(c==='Beyaz'?'#ddd':(c==='Mavi'?'blue':(c==='Kırmızı'?'red':'green')))
+  }));
+
+  new Chart(document.getElementById('ageColorChart'), {
+      type: 'bar',
+      data: { labels: ageLabels, datasets: ageDatasets },
+      options: { maintainAspectRatio: false, responsive: true, scales: { x: { stacked: false }, y: { beginAtZero: true } } }
+  });
+</script>
+{% endblock %}

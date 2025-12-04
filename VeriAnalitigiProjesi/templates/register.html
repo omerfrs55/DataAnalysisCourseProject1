@@ -1,0 +1,80 @@
+{% extends 'layout.html' %} {% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card shadow">
+      <div class="card-header bg-primary text-white">
+        Detaylı Kayıt Formu (Analiz İçin)
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <div class="mb-3">
+            <label>Kullanıcı Adı</label>
+            <input type="text" name="username" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label>Şifre</label>
+            <input
+              type="password"
+              name="password"
+              class="form-control"
+              required
+            />
+          </div>
+
+          <hr />
+          <h5 class="text-muted">Demografik Bilgiler</h5>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label>Cinsiyet</label>
+              <select name="gender" class="form-select" required>
+                <option value="E">Erkek</option>
+                <option value="K">Kadın</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label>Doğum Tarihi</label>
+              <input
+                type="date"
+                name="birth_date"
+                class="form-control"
+                required
+              />
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label>Eğitim Durumu</label>
+            <select name="education" class="form-select" required>
+              <option value="Lise">Lise</option>
+              <option value="Lisans">Üniversite (Lisans)</option>
+              <option value="Yuksek">Yüksek Lisans / Doktora</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label>Şehir</label>
+            <input
+              type="text"
+              name="city"
+              class="form-control"
+              placeholder="Örn: İstanbul"
+            />
+          </div>
+          <div class="mb-3">
+            <label>Meslek</label>
+            <input
+              type="text"
+              name="job"
+              class="form-control"
+              placeholder="Örn: Öğrenci"
+            />
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100">Kayıt Ol</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends 'layout.html' %} {% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-4">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h2 class="card-title text-center mb-4">Giriş Yap</h2>
+        <form method="POST" action="{{ url_for('login') }}">
+          <div class="mb-3">
+            <label for="username" class="form-label">Kullanıcı Adı</label>
+            <input
+              type="text"
+              class="form-control"
+              id="username"
+              name="username"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">Şifre</label>
+            <input
+              type="password"
+              class="form-control"
+              id="password"
+              name="password"
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Giriş Yap</button>
+        </form>
+        <p class="text-center mt-3">
+          Hesabınız yok mu? <a href="{{ url_for('register') }}">Kayıt Olun</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
