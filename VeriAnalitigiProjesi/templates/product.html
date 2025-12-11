@@ -69,7 +69,7 @@
     <div class="col-12 mt-4">
       <div class="card shadow-sm border-success">
         <div class="card-header bg-success text-white fw-bold">
-          Bu Ürün İçin Düzeltilmiş (Ortalama) Satış Akışı
+          Bu Ürün İçin Optimize Edilmiş Satış Grafiği (Anomalisiz)
         </div>
         <div class="card-body" style="height: 350px; position: relative">
           <canvas id="prodCleanChart"></canvas>
@@ -131,7 +131,7 @@
       options: { maintainAspectRatio: false, responsive: true, scales: { x: { stacked: false }, y: { beginAtZero: true } } }
   });
 
-  // --- YENİ ÜRÜN BAZLI OUTLIER JS ---
+  // --- ÜRÜN BAZLI OUTLIER JS ---
   const pData = {{ prod_outlier_data | tojson }};
 
   if(pData && pData.labels.length > 0) {
@@ -161,18 +161,18 @@
           options: { maintainAspectRatio: false, responsive: true }
       });
 
-      // 2. Ürün Clean (Fake Ortalama)
+      // 2. Ürün Clean (Düzeltilmiş) - DÜZ ÇİZGİ
       new Chart(document.getElementById('prodCleanChart'), {
           type: 'line',
           data: {
               labels: pData.labels,
               datasets: [{
-                  label: 'Düzeltilmiş Akış',
+                  label: 'Optimize Akış',
                   data: pData.clean_data,
                   borderColor: '#2ecc71',
                   backgroundColor: 'rgba(46, 204, 113, 0.2)',
                   fill: true,
-                  tension: 0.3
+                  tension: 0 // DÜZ ÇİZGİ
               }]
           },
           options: { maintainAspectRatio: false, responsive: true }
