@@ -133,12 +133,10 @@ def product_detail(product_id):
         c = p.selected_color
         if c in age_color_matrix[grp]: age_color_matrix[grp][c] += 1
 
-    # --- ÜRÜNE ÖZEL OUTLIER ANALİZİ (YENİ) ---
+    # ÜRÜN BAZLI OUTLIER HESABI
     prod_outlier_data = {'labels': [], 'data': [], 'clean_data': []}
-    
     if current_user.is_authenticated and current_user.is_admin:
         try:
-            # Tarihleri Grupla
             date_counts = {}
             for p in purchases:
                 d_str = p.timestamp.strftime('%Y-%m-%d')
@@ -148,34 +146,33 @@ def product_detail(product_id):
                 sorted_dates = sorted(date_counts.keys())
                 counts = [date_counts[d] for d in sorted_dates]
                 
-                # İstatistik
                 if len(counts) > 1:
                     mean = statistics.mean(counts)
                     stdev = statistics.stdev(counts)
                 else:
-                    mean = counts[0]
-                    stdev = 0
+                    mean = counts[0]; stdev = 0
 
-                threshold = mean + (2 * stdev) if stdev > 0 else mean + 1
+                # Eşik değer: Ortalama + 2 Standart Sapma
+                threshold = mean + (2 * stdev) if stdev > 0 else mean + 5
                 
                 prod_outlier_data['labels'] = sorted_dates
                 prod_outlier_data['data'] = counts
                 
+                outliers_arr = []
                 clean_arr = []
-                outlier_points = []
                 
                 for c in counts:
                     if c > threshold:
-                        clean_arr.append(mean) # Outlier varsa ortalamayı bas (Fake Data)
-                        outlier_points.append(c)
+                        outliers_arr.append(c)
+                        # OUTLIER VARSA DİREKT ORTALAMAYI BAS (FAKE DATA)
+                        clean_arr.append(int(mean))
                     else:
+                        outliers_arr.append(None)
                         clean_arr.append(c)
-                        outlier_points.append(None)
-                
+
+                prod_outlier_data['outliers'] = outliers_arr
                 prod_outlier_data['clean_data'] = clean_arr
-                prod_outlier_data['outliers'] = outlier_points
-        except Exception as e:
-            print(f"Prod Detail Error: {e}")
+        except: pass
 
     return render_template('product.html', product=product, current_image=dynamic_img, 
                            selected_color=selected_color, colors=ALL_COLORS, 
@@ -221,13 +218,14 @@ def admin_dashboard():
         for g, c in gender_stats: g_map[g] = c
         gender_data = {'labels': ['Erkek', 'Kadın'], 'data': [g_map['E'], g_map['K']]}
 
-        # 3. Segment Analizleri
+        # 3. Segmentasyon
         all_purchases = db.session.query(PurchaseLog).all()
         if not all_purchases: return render_template('dashboard.html', **default_data)
 
         segments = {}
         for p in all_purchases:
             u = p.user
+            if not u: continue
             key = f"{u.city} - {u.job}"
             if key not in segments: segments[key] = {'E': 0, 'K': 0, 'ages': []}
             segments[key][u.gender] += 1
@@ -247,6 +245,7 @@ def admin_dashboard():
         cat_segments = {}
         all_categories = set()
         for p in all_purchases:
+            if not p.product: continue
             key = f"{p.user.city} - {p.user.job}"
             cat = p.product.category
             if key not in cat_segments: cat_segments[key] = {}
@@ -264,21 +263,23 @@ def admin_dashboard():
                 data_points.append(val)
             segment_cat_data['datasets'].append({'label': cat, 'data': data_points})
 
-        # 4. OUTLIER ANALİZİ (ÇOKLU GÜN)
-        daily_products = {}
-        date_counts = {}
-
+        # --- GELİŞMİŞ OUTLIER ANALİZİ ---
+        daily_stats = {} 
+        
         for p in all_purchases:
             d_str = p.timestamp.strftime('%Y-%m-%d')
-            date_counts[d_str] = date_counts.get(d_str, 0) + 1
-            if d_str not in daily_products: daily_products[d_str] = []
-            daily_products[d_str].append(p)
+            if d_str not in daily_stats:
+                daily_stats[d_str] = {'total': 0, 'users': Counter(), 'products': Counter()}
+            
+            daily_stats[d_str]['total'] += 1
+            daily_stats[d_str]['users'][p.user_id] += 1
+            daily_stats[d_str]['products'][p.product.name] += 1
 
         outlier_data = {'labels': [], 'data': [], 'outliers': [], 'clean_data': [], 'details': []}
 
-        if date_counts:
-            sorted_dates = sorted(date_counts.keys())
-            counts = [date_counts[d] for d in sorted_dates]
+        if daily_stats:
+            sorted_dates = sorted(daily_stats.keys())
+            counts = [daily_stats[d]['total'] for d in sorted_dates]
 
             if len(counts) > 1:
                 mean = statistics.mean(counts)
@@ -286,47 +287,50 @@ def admin_dashboard():
             else:
                 mean = counts[0]; stdev = 0
             
-            threshold = mean + (2 * stdev) if stdev > 0 else mean + 1
-
-            outlier_data['labels'] = sorted_dates
-            outlier_data['data'] = counts
-            outlier_data['threshold'] = round(threshold, 2)
+            # Eşik değer: Mean + 2 StdDev
+            threshold = mean + (2 * stdev) if stdev > 0 else mean + 10
 
             outliers_arr = []
             clean_arr = []
             details_list = []
 
-            for i, c in enumerate(counts):
-                date_key = sorted_dates[i]
-                if c > threshold:
-                    outliers_arr.append(c)
-                    clean_arr.append(mean) # Düzeltilmiş grafik için ORTALAMAYI bas (Fake)
+            for i, d in enumerate(sorted_dates):
+                total = daily_stats[d]['total']
+                
+                if total > threshold:
+                    # Outlier tespit edildi
+                    outliers_arr.append(total)
+                    
+                    # FAKE DATA: Outlier yerine direkt genel ortalamayı basıyoruz.
+                    fake_val = int(mean)
+                    clean_arr.append(fake_val)
 
-                    days_sales = daily_products[date_key]
-                    prod_names = [sale.product.name for sale in days_sales]
-                    
-                    # O gün en çok satan ürünü bul
-                    most_common_prod = Counter(prod_names).most_common(1)[0]
-                    # Ürün objesini bulmak için
-                    target_prod = next((s.product for s in days_sales if s.product.name == most_common_prod[0]), None)
-                    
+                    # Detayları topla
+                    user_counts = daily_stats[d]['users']
+                    whale_user_id, whale_qty = user_counts.most_common(1)[0]
+                    top_prod_name = daily_stats[d]['products'].most_common(1)[0][0]
+                    prod_obj = Product.query.filter_by(name=top_prod_name).first()
+
                     details_list.append({
-                        'date': date_key,
-                        'total_sales': c,
-                        'prod_name': most_common_prod[0],
-                        'prod_id': target_prod.id if target_prod else 0, # Link için ID lazım
-                        'category': target_prod.category if target_prod else 'Genel'
+                        'date': d,
+                        'total_sales': total,
+                        'outlier_qty': whale_qty, 
+                        'prod_name': top_prod_name,
+                        'prod_id': prod_obj.id if prod_obj else 0,
+                        'category': prod_obj.category if prod_obj else 'Genel'
                     })
                 else:
                     outliers_arr.append(None)
-                    clean_arr.append(c)
+                    clean_arr.append(total)
 
+            outlier_data['labels'] = sorted_dates
+            outlier_data['data'] = counts
             outlier_data['outliers'] = outliers_arr
             outlier_data['clean_data'] = clean_arr
             outlier_data['details'] = details_list
 
     except Exception as e:
-        print(f"DASHBOARD HATASI: {e}")
+        print(f"DASHBOARD ERROR: {e}")
         return render_template('dashboard.html', **default_data)
 
     return render_template('dashboard.html', 
@@ -391,7 +395,7 @@ def init_db():
     cities = ["İstanbul", "Ankara", "İzmir", "Bursa", "Antalya"]
     
     users = []
-    for i in range(80):
+    for i in range(120):
         edu = random.choice(list(jobs.keys()))
         u = User(username=f"user{i}", gender=random.choice(['E','K']), 
                  birth_date=datetime.date(random.randint(1980, 2005), 1, 1),
@@ -401,44 +405,73 @@ def init_db():
     db.session.add_all(users)
     db.session.commit()
     
-    print("3. VERİ SİMÜLASYONU BAŞLIYOR (OUTLIER IÇERIR)...")
+    print("3. VERİ SİMÜLASYONU BAŞLIYOR (BÜYÜK HACİMLİ)...")
     prods = Product.query.all()
+    all_users = User.query.filter(User.username != 'admin').all()
     colors = list(COLOR_CODES.keys())
     
-    # --- OUTLIER GÜNLERİ BELİRLE ---
-    # Son 30 gün içinde rastgele 4-5 gün seçelim ve o günlere "PATLAMA" yaşatalım.
-    today = datetime.datetime.utcnow()
-    outlier_days = []
-    for _ in range(5):
-        d = today - datetime.timedelta(days=random.randint(1, 28))
-        outlier_days.append(d.strftime('%Y-%m-%d'))
-    
-    for u in users:
-        count = random.randint(5, 10)
-        for _ in range(count):
-            p = random.choice(prods)
-            db.session.add(ClickLog(user_id=u.id, product_id=p.id))
-            
-            # Normal gün mü, Outlier günü mü?
-            delta = random.randint(0, 30)
-            log_date = today - datetime.timedelta(days=delta)
-            
-            # Eğer tarih outlier listesindeyse, o gün satın alma şansını artır (Yığılma olsun)
-            date_str = log_date.strftime('%Y-%m-%d')
-            
-            # Rastgele normal dağılım
-            final_date = log_date
+    products_by_cat = {}
+    for p in prods:
+        if p.category not in products_by_cat: products_by_cat[p.category] = []
+        products_by_cat[p.category].append(p)
 
-            # OUTLIER MANİPÜLASYONU:
-            # Kullanıcıların %30'unun alımlarını bu özel günlere kaydırıyoruz ki grafik patlasın.
-            if random.random() < 0.3 and outlier_days:
-                forced_day_str = random.choice(outlier_days)
-                final_date = datetime.datetime.strptime(forced_day_str, '%Y-%m-%d')
-                
-            db.session.add(PurchaseLog(user_id=u.id, product_id=p.id, selected_color=random.choice(colors), timestamp=final_date))
+    today = datetime.datetime.utcnow()
+    
+    # 3 Rastgele Outlier Günü
+    days_range = list(range(1, 29))
+    outlier_deltas = random.sample(days_range, 3) 
+    outlier_dates = [(today - datetime.timedelta(days=d)).strftime('%Y-%m-%d') for d in outlier_deltas]
+    print(f"Outlier Günleri: {outlier_dates}")
+
+    bulk_purchases = []
+    bulk_clicks = []
+
+    for delta in range(30):
+        current_date = today - datetime.timedelta(days=delta)
+        date_str = current_date.strftime('%Y-%m-%d')
+        
+        daily_active_users_count = random.randint(15, 40)
+        daily_users = random.sample(all_users, daily_active_users_count)
+        
+        for u in daily_users:
+            cats = random.sample(list(products_by_cat.keys()), k=random.randint(1, 3))
             
+            for cat in cats:
+                p = random.choice(products_by_cat[cat])
+                qty = random.randint(1, 5)
+                click_count = random.randint(qty * 3, qty * 6)
+                
+                for _ in range(click_count):
+                    bulk_clicks.append(ClickLog(user_id=u.id, product_id=p.id, timestamp=current_date))
+
+                for _ in range(qty):
+                    bulk_purchases.append(PurchaseLog(
+                        user_id=u.id, product_id=p.id, 
+                        selected_color=random.choice(colors), 
+                        timestamp=current_date
+                    ))
+
+        if date_str in outlier_dates:
+            whale_user = random.choice(all_users)
+            whale_product = random.choice(prods)
+            whale_qty = random.randint(500, 1000)
+            print(f"!!! OUTLIER: {date_str} - {whale_user.username} - {whale_qty} adet")
+            
+            for _ in range(int(whale_qty * 1.1)):
+                bulk_clicks.append(ClickLog(user_id=whale_user.id, product_id=whale_product.id, timestamp=current_date))
+
+            for _ in range(whale_qty):
+                bulk_purchases.append(PurchaseLog(
+                    user_id=whale_user.id, product_id=whale_product.id, 
+                    selected_color=random.choice(colors), 
+                    timestamp=current_date
+                ))
+
+    print("Veriler kaydediliyor...")
+    db.session.bulk_save_objects(bulk_clicks)
+    db.session.bulk_save_objects(bulk_purchases)
     db.session.commit()
-    print("HAZIR! Veriler ve yapay dalgalanmalar (Outliers) oluşturuldu.")
+    print("BİTTİ.")
 
 if __name__ == '__main__':
     app.run(debug=True)
