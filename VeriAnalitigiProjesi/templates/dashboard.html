@@ -80,15 +80,14 @@
                 >
               </div>
               <span class="badge bg-danger rounded-pill"
-                >+{{ item.outlier_qty }} Anlık Alım (Toplam: {{ item.total_sales
-                }})</span
+                >+{{ item.outlier_qty }} Aykırı Alım (Toplam: {{
+                item.total_sales }})</span
               >
             </a>
             {% endfor %}
           </div>
           <p class="text-muted small mt-2 mb-0">
-            * Bu listedeki işlemler, "Optimize Edilmiş" grafikten tamamen
-            çıkarılmış ve ortalama veri ile değiştirilmiştir.
+            * Bu listedeki işlemler, "Optimize Edilmiş" grafikten çıkarılmıştır.
           </p>
         </div>
       </div>
@@ -210,7 +209,7 @@
       options: { maintainAspectRatio: false, responsive: true }
   });
 
-  // DÜZELTİLMİŞ GRAFİK - tension: 0 (Düz Çizgi)
+  // DÜZELTİLMİŞ GRAFİK - Düz çizgi (tension: 0)
   new Chart(document.getElementById('cleanChart'), {
       type: 'line',
       data: {
@@ -221,7 +220,7 @@
               borderColor: '#2ecc71',
               backgroundColor: 'rgba(46, 204, 113, 0.0)',
               borderWidth: 3,
-              tension: 0, // DÜMDÜZ ÇİZGİ
+              tension: 0, // DÜZ ÇİZGİ
               pointRadius: 4
           }]
       },
