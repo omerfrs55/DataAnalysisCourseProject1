@@ -22,18 +22,88 @@
   </div>
 
   <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm border-danger h-100">
+        <div class="card-header bg-danger text-white fw-bold">
+          <i class="bi bi-exclamation-triangle-fill"></i> Outlier (Aykırı Değer)
+          Tespiti
+        </div>
+        <div class="card-body" style="height: 300px; position: relative">
+          <canvas id="outlierChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm border-success h-100">
+        <div class="card-header bg-success text-white fw-bold">
+          <i class="bi bi-graph-up"></i> Temizlenmiş Trend
+        </div>
+        <div class="card-body" style="height: 300px; position: relative">
+          <canvas id="cleanChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if outlier_data.details %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card shadow border-danger">
+        <div class="card-header bg-danger text-white fw-bold">
+          <i class="bi bi-search"></i> Tespit Edilen Aykırı Durumların Detay
+          Analizi
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Tarih</th>
+                  <th>Toplam Satış</th>
+                  <th>Günün En Çok Satanı</th>
+                  <th>Öne Çıkan Kategori</th>
+                  <th>Durum</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in outlier_data.details %}
+                <tr>
+                  <td class="fw-bold">{{ item.date }}</td>
+                  <td class="text-danger fw-bold">
+                    {{ item.total_sales }} Adet
+                  </td>
+                  <td>{{ item.top_product }}</td>
+                  <td>
+                    <span class="badge bg-secondary"
+                      >{{ item.top_category }}</span
+                    >
+                  </td>
+                  <td>
+                    <span class="badge bg-danger">{{ item.status }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer small text-muted">
+          * Yukarıdaki tablo, grafikteki "Kırmızı Nokta" ile işaretlenen
+          günlerin detay dökümüdür.
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="row mb-4">
     <div class="col-12">
       <div class="card shadow-sm border-primary">
         <div class="card-header bg-primary text-white fw-bold">
-          <small>SEGMENT 1</small><br />
-          Kim Ne Kadar Alıyor? (Cinsiyet Kırılımlı)
+          Segment 1: Cinsiyet & Harcama
         </div>
         <div class="card-body" style="height: 400px; position: relative">
           <canvas id="segmentGenderChart"></canvas>
-        </div>
-        <div class="card-footer text-muted small">
-          * Grafik çubuklarının üzerine gelince o grubun
-          <b>Ortalama Yaşını</b> görebilirsiniz.
         </div>
       </div>
     </div>
@@ -41,10 +111,9 @@
 
   <div class="row mb-4">
     <div class="col-12">
-      <div class="card shadow-sm border-success">
-        <div class="card-header bg-success text-white fw-bold">
-          <small>SEGMENT 2</small><br />
-          Bu Gruplar Hangi Kategorileri Alıyor?
+      <div class="card shadow-sm border-secondary">
+        <div class="card-header bg-secondary text-white fw-bold">
+          Segment 2: Kategori Tercihleri
         </div>
         <div class="card-body" style="height: 400px; position: relative">
           <canvas id="segmentCatChart"></canvas>
@@ -56,7 +125,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // POP CHART
+  // MEVCUT GRAFİKLER
   new Chart(document.getElementById('popChart'), {
       type: 'bar',
       data: {
@@ -69,7 +138,6 @@
       options: { maintainAspectRatio: false, responsive: true }
   });
 
-  // GENDER CHART
   new Chart(document.getElementById('genderChart'), {
       type: 'pie',
       data: {
@@ -79,7 +147,6 @@
       options: { maintainAspectRatio: false, responsive: true }
   });
 
-  // SEGMENT 1
   const segGenderData = {{ segment_gender_data | tojson }};
   new Chart(document.getElementById('segmentGenderChart'), {
       type: 'bar',
@@ -94,12 +161,10 @@
           indexAxis: 'y',
           maintainAspectRatio: false,
           responsive: true,
-          plugins: { tooltip: { callbacks: { footer: (i) => 'Ort. Yaş: ' + segGenderData.avg_age[i[0].dataIndex] } } },
           scales: { x: { stacked: true }, y: { stacked: true } }
       }
   });
 
-  // SEGMENT 2
   const segCatData = {{ segment_cat_data | tojson }};
   const colors = ['#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF'];
   const datasets = segCatData.datasets.map((ds, i) => ({ ...ds, backgroundColor: colors[i % colors.length], stack: 's2' }));
@@ -113,6 +178,65 @@
           responsive: true,
           scales: { x: { stacked: true }, y: { stacked: true } }
       }
+  });
+
+  // --- OUTLIER GRAFİKLERİ ---
+  const outlierData = {{ outlier_data | tojson }};
+
+  new Chart(document.getElementById('outlierChart'), {
+      type: 'line',
+      data: {
+          labels: outlierData.labels,
+          datasets: [
+              {
+                  label: 'Günlük Satış',
+                  data: outlierData.data,
+                  borderColor: '#3498db',
+                  tension: 0.1
+              },
+              {
+                  label: 'Outlier (Aykırı)',
+                  data: outlierData.outliers,
+                  backgroundColor: 'red',
+                  borderColor: 'red',
+                  pointStyle: 'circle',
+                  pointRadius: 8,
+                  showLine: false
+              }
+          ]
+      },
+      options: {
+          maintainAspectRatio: false,
+          responsive: true,
+          plugins: {
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        let label = context.dataset.label || '';
+                        if (label) label += ': ';
+                        if (context.parsed.y !== null) label += context.parsed.y;
+                        return label;
+                    }
+                }
+            }
+        }
+      }
+  });
+
+  new Chart(document.getElementById('cleanChart'), {
+      type: 'line',
+      data: {
+          labels: outlierData.labels,
+          datasets: [{
+              label: 'Temiz Trend',
+              data: outlierData.clean_data,
+              borderColor: '#27ae60',
+              backgroundColor: 'rgba(39, 174, 96, 0.1)',
+              fill: true,
+              tension: 0.3
+          }]
+      },
+      options: { maintainAspectRatio: false, responsive: true }
   });
 </script>
 {% endblock %}
