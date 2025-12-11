@@ -36,7 +36,7 @@
     <div class="col-md-6">
       <div class="card shadow-sm border-success h-100">
         <div class="card-header bg-success text-white fw-bold">
-          <i class="bi bi-graph-up"></i> Temizlenmiş Trend
+          <i class="bi bi-magic"></i> Düzeltilmiş Satış Akışı (Ortalama)
         </div>
         <div class="card-body" style="height: 300px; position: relative">
           <canvas id="cleanChart"></canvas>
@@ -48,48 +48,47 @@
   {% if outlier_data.details %}
   <div class="row mb-4">
     <div class="col-12">
-      <div class="card shadow border-danger">
-        <div class="card-header bg-danger text-white fw-bold">
-          <i class="bi bi-search"></i> Tespit Edilen Aykırı Durumların Detay
-          Analizi
-        </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-striped table-hover mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Tarih</th>
-                  <th>Toplam Satış</th>
-                  <th>Günün En Çok Satanı</th>
-                  <th>Öne Çıkan Kategori</th>
-                  <th>Durum</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in outlier_data.details %}
-                <tr>
-                  <td class="fw-bold">{{ item.date }}</td>
-                  <td class="text-danger fw-bold">
-                    {{ item.total_sales }} Adet
-                  </td>
-                  <td>{{ item.top_product }}</td>
-                  <td>
-                    <span class="badge bg-secondary"
-                      >{{ item.top_category }}</span
-                    >
-                  </td>
-                  <td>
-                    <span class="badge bg-danger">{{ item.status }}</span>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+      <div class="d-grid gap-2">
+        <button
+          class="btn btn-outline-danger fw-bold shadow-sm"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#outlierCollapse"
+          aria-expanded="false"
+          aria-controls="outlierCollapse"
+        >
+          ⚠️ Tespit Edilen Aykırı Ürünler (Outliers) - Listeyi Aç/Kapat
+        </button>
+      </div>
+      <div class="collapse mt-2" id="outlierCollapse">
+        <div class="card card-body border-danger">
+          <h5 class="text-danger fw-bold mb-3">
+            Aykırı Satış Tespit Edilen Günler ve Ürünler
+          </h5>
+          <div class="list-group">
+            {% for item in outlier_data.details %}
+            <a
+              href="{{ url_for('product_detail', product_id=item.prod_id) }}"
+              class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+            >
+              <div>
+                <span class="fw-bold text-dark">{{ item.prod_name }}</span>
+                <br />
+                <small class="text-muted"
+                  ><i class="bi bi-calendar-event"></i> {{ item.date }} -
+                  Kategori: {{ item.category }}</small
+                >
+              </div>
+              <span class="badge bg-danger rounded-pill"
+                >{{ item.total_sales }} Satış</span
+              >
+            </a>
+            {% endfor %}
           </div>
-        </div>
-        <div class="card-footer small text-muted">
-          * Yukarıdaki tablo, grafikteki "Kırmızı Nokta" ile işaretlenen
-          günlerin detay dökümüdür.
+          <p class="text-muted small mt-2 mb-0">
+            * Listelenen ürünlere tıklayarak detaylı analiz sayfasına
+            gidebilirsiniz.
+          </p>
         </div>
       </div>
     </div>
@@ -189,7 +188,7 @@
           labels: outlierData.labels,
           datasets: [
               {
-                  label: 'Günlük Satış',
+                  label: 'Günlük Toplam Satış',
                   data: outlierData.data,
                   borderColor: '#3498db',
                   tension: 0.1
@@ -205,22 +204,7 @@
               }
           ]
       },
-      options: {
-          maintainAspectRatio: false,
-          responsive: true,
-          plugins: {
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        let label = context.dataset.label || '';
-                        if (label) label += ': ';
-                        if (context.parsed.y !== null) label += context.parsed.y;
-                        return label;
-                    }
-                }
-            }
-        }
-      }
+      options: { maintainAspectRatio: false, responsive: true }
   });
 
   new Chart(document.getElementById('cleanChart'), {
@@ -228,7 +212,7 @@
       data: {
           labels: outlierData.labels,
           datasets: [{
-              label: 'Temiz Trend',
+              label: 'Ortalama Düzeltilmiş',
               data: outlierData.clean_data,
               borderColor: '#27ae60',
               backgroundColor: 'rgba(39, 174, 96, 0.1)',

@@ -37,6 +37,7 @@
     <h3 class="mb-4 text-danger">
       <i class="bi bi-shield-lock"></i> Yönetici Analizleri
     </h3>
+
     <div class="col-md-6 mb-4">
       <div class="card shadow-sm h-100">
         <div class="card-header fw-bold">Genel Renk Tercihi</div>
@@ -50,6 +51,28 @@
         <div class="card-header fw-bold">Yaş Gruplarına Göre Renk Seçimi</div>
         <div class="card-body" style="height: 300px; position: relative">
           <canvas id="ageColorChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 mt-4">
+      <div class="card shadow-sm border-danger">
+        <div class="card-header bg-danger text-white fw-bold">
+          Bu Ürünün Satış Geçmişi & Aykırı Durumlar
+        </div>
+        <div class="card-body" style="height: 350px; position: relative">
+          <canvas id="prodOutlierChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 mt-4">
+      <div class="card shadow-sm border-success">
+        <div class="card-header bg-success text-white fw-bold">
+          Bu Ürün İçin Düzeltilmiş (Ortalama) Satış Akışı
+        </div>
+        <div class="card-body" style="height: 350px; position: relative">
+          <canvas id="prodCleanChart"></canvas>
         </div>
       </div>
     </div>
@@ -75,27 +98,19 @@
   // SADECE ADMIN VARSA GRAFİKLERİ ÇİZ
   {% if current_user.is_authenticated and current_user.is_admin %}
 
-  // RENK HARİTASI (Hata önleyici)
   const colorMap = {
-      'Siyah': '#000000',  // Tam Siyah
-      'Beyaz': '#E0E0E0',  // Açık Gri (Beyaz arkaplanda görünsün diye)
-      'Mavi': 'blue',
-      'Kırmızı': 'red',
-      'Yeşil': 'green'
+      'Siyah': '#000000', 'Beyaz': '#E0E0E0', 'Mavi': 'blue', 'Kırmızı': 'red', 'Yeşil': 'green'
   };
 
   const colorDist = {{ color_dist | tojson }};
   const labels = Object.keys(colorDist);
-  const bgColors = labels.map(l => colorMap[l] || '#ccc'); // Haritadan rengi çek
+  const bgColors = labels.map(l => colorMap[l] || '#ccc');
 
   new Chart(document.getElementById('colorDistChart'), {
       type: 'pie',
       data: {
           labels: labels,
-          datasets: [{
-              data: Object.values(colorDist),
-              backgroundColor: bgColors
-          }]
+          datasets: [{ data: Object.values(colorDist), backgroundColor: bgColors }]
       },
       options: { maintainAspectRatio: false, responsive: true }
   });
@@ -104,7 +119,6 @@
   const colorsList = {{ colors | tojson }};
   const ageLabels = Object.keys(ageMatrix);
 
-  // Datasetleri renk haritasına göre oluştur
   const ageDatasets = colorsList.map(c => ({
       label: c,
       data: ageLabels.map(grp => ageMatrix[grp][c]),
@@ -116,6 +130,54 @@
       data: { labels: ageLabels, datasets: ageDatasets },
       options: { maintainAspectRatio: false, responsive: true, scales: { x: { stacked: false }, y: { beginAtZero: true } } }
   });
+
+  // --- YENİ ÜRÜN BAZLI OUTLIER JS ---
+  const pData = {{ prod_outlier_data | tojson }};
+
+  if(pData && pData.labels.length > 0) {
+      // 1. Ürün Outlier
+      new Chart(document.getElementById('prodOutlierChart'), {
+          type: 'line',
+          data: {
+              labels: pData.labels,
+              datasets: [
+                  {
+                      label: 'Satış Adedi',
+                      data: pData.data,
+                      borderColor: '#e74c3c',
+                      tension: 0.1
+                  },
+                  {
+                      label: 'Outlier Noktası',
+                      data: pData.outliers,
+                      backgroundColor: 'black',
+                      borderColor: 'black',
+                      pointStyle: 'rectRot',
+                      pointRadius: 10,
+                      showLine: false
+                  }
+              ]
+          },
+          options: { maintainAspectRatio: false, responsive: true }
+      });
+
+      // 2. Ürün Clean (Fake Ortalama)
+      new Chart(document.getElementById('prodCleanChart'), {
+          type: 'line',
+          data: {
+              labels: pData.labels,
+              datasets: [{
+                  label: 'Düzeltilmiş Akış',
+                  data: pData.clean_data,
+                  borderColor: '#2ecc71',
+                  backgroundColor: 'rgba(46, 204, 113, 0.2)',
+                  fill: true,
+                  tension: 0.3
+              }]
+          },
+          options: { maintainAspectRatio: false, responsive: true }
+      });
+  }
   {% endif %}
 </script>
 {% endblock %}
