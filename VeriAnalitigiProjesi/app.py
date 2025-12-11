@@ -133,18 +133,20 @@ def product_detail(product_id):
         c = p.selected_color
         if c in age_color_matrix[grp]: age_color_matrix[grp][c] += 1
 
-    # ÜRÜN BAZLI OUTLIER HESABI
+    # Ürün detay sayfasında outlier hesabı (Düzeltme Mantığı: Balina Çıkarma)
     prod_outlier_data = {'labels': [], 'data': [], 'clean_data': []}
     if current_user.is_authenticated and current_user.is_admin:
         try:
-            date_counts = {}
+            # {tarih: {total: 5, purchases: [1, 1, 1, 1, 1]}}
+            date_map = {}
             for p in purchases:
                 d_str = p.timestamp.strftime('%Y-%m-%d')
-                date_counts[d_str] = date_counts.get(d_str, 0) + 1
+                if d_str not in date_map: date_map[d_str] = []
+                date_map[d_str].append(p.user_id) # Kim almış kaydedelim
             
-            if date_counts:
-                sorted_dates = sorted(date_counts.keys())
-                counts = [date_counts[d] for d in sorted_dates]
+            if date_map:
+                sorted_dates = sorted(date_map.keys())
+                counts = [len(date_map[d]) for d in sorted_dates]
                 
                 if len(counts) > 1:
                     mean = statistics.mean(counts)
@@ -152,7 +154,6 @@ def product_detail(product_id):
                 else:
                     mean = counts[0]; stdev = 0
 
-                # Eşik değer: Ortalama + 2 Standart Sapma
                 threshold = mean + (2 * stdev) if stdev > 0 else mean + 5
                 
                 prod_outlier_data['labels'] = sorted_dates
@@ -161,18 +162,26 @@ def product_detail(product_id):
                 outliers_arr = []
                 clean_arr = []
                 
-                for c in counts:
+                for i, c in enumerate(counts):
                     if c > threshold:
+                        # Outlier tespit edildi
                         outliers_arr.append(c)
-                        # OUTLIER VARSA DİREKT ORTALAMAYI BAS (FAKE DATA)
-                        clean_arr.append(int(mean))
+                        
+                        # O gün bu ürünü en çok alan kişiyi (Balina) bul
+                        users_on_day = date_map[sorted_dates[i]]
+                        user_counts = Counter(users_on_day)
+                        whale_qty = user_counts.most_common(1)[0][1]
+                        
+                        # Düzeltilmiş = Toplam - Balina Miktarı
+                        clean_arr.append(c - whale_qty)
                     else:
                         outliers_arr.append(None)
                         clean_arr.append(c)
 
                 prod_outlier_data['outliers'] = outliers_arr
                 prod_outlier_data['clean_data'] = clean_arr
-        except: pass
+        except Exception as e:
+            print(f"Prod Detail Chart Error: {e}")
 
     return render_template('product.html', product=product, current_image=dynamic_img, 
                            selected_color=selected_color, colors=ALL_COLORS, 
@@ -263,7 +272,8 @@ def admin_dashboard():
                 data_points.append(val)
             segment_cat_data['datasets'].append({'label': cat, 'data': data_points})
 
-        # --- GELİŞMİŞ OUTLIER ANALİZİ ---
+        # --- OUTLIER ANALİZİ (Balina Kullanıcı Tespiti) ---
+        # { '2025-12-01': { 'total': 150, 'users': {user_id: count}, 'products': {prod_name: count} } }
         daily_stats = {} 
         
         for p in all_purchases:
@@ -287,7 +297,7 @@ def admin_dashboard():
             else:
                 mean = counts[0]; stdev = 0
             
-            # Eşik değer: Mean + 2 StdDev
+            # Eşik değer
             threshold = mean + (2 * stdev) if stdev > 0 else mean + 10
 
             outliers_arr = []
@@ -301,20 +311,25 @@ def admin_dashboard():
                     # Outlier tespit edildi
                     outliers_arr.append(total)
                     
-                    # FAKE DATA: Outlier yerine direkt genel ortalamayı basıyoruz.
-                    fake_val = int(mean)
-                    clean_arr.append(fake_val)
-
-                    # Detayları topla
+                    # O gün en çok alım yapan kişiyi (Balina) bul
                     user_counts = daily_stats[d]['users']
+                    # En çok alan kişi ve adedi
                     whale_user_id, whale_qty = user_counts.most_common(1)[0]
+                    
+                    # --- DÜZELTME MANTIĞI: BALİNAYI ÇIKAR ---
+                    # Toplam satıştan, anomaliliğe sebep olan kişinin alımını çıkarıyoruz.
+                    # Geriye kalan veri, o günkü "doğal" satışları temsil eder.
+                    cleaned_val = total - whale_qty
+                    clean_arr.append(cleaned_val)
+
+                    # Hangi ürün patlama yapmış?
                     top_prod_name = daily_stats[d]['products'].most_common(1)[0][0]
                     prod_obj = Product.query.filter_by(name=top_prod_name).first()
 
                     details_list.append({
                         'date': d,
                         'total_sales': total,
-                        'outlier_qty': whale_qty, 
+                        'outlier_qty': whale_qty, # Ekrana basmak için fazlalık miktar
                         'prod_name': top_prod_name,
                         'prod_id': prod_obj.id if prod_obj else 0,
                         'category': prod_obj.category if prod_obj else 'Genel'
@@ -331,6 +346,8 @@ def admin_dashboard():
 
     except Exception as e:
         print(f"DASHBOARD ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         return render_template('dashboard.html', **default_data)
 
     return render_template('dashboard.html', 
@@ -394,6 +411,7 @@ def init_db():
     jobs = {"Lise": ["Öğrenci", "Garson", "Kasiyer"], "Lisans": ["Mühendis", "Öğretmen", "Yazılımcı"], "Yuksek": ["Doktor", "Avukat", "Akademisyen"]}
     cities = ["İstanbul", "Ankara", "İzmir", "Bursa", "Antalya"]
     
+    # Kullanıcı sayısını arttırdık (120)
     users = []
     for i in range(120):
         edu = random.choice(list(jobs.keys()))
@@ -405,11 +423,12 @@ def init_db():
     db.session.add_all(users)
     db.session.commit()
     
-    print("3. VERİ SİMÜLASYONU BAŞLIYOR (BÜYÜK HACİMLİ)...")
+    print("3. VERİ SİMÜLASYONU BAŞLIYOR (NORMAL + OUTLIER)...")
     prods = Product.query.all()
     all_users = User.query.filter(User.username != 'admin').all()
     colors = list(COLOR_CODES.keys())
     
+    # Ürünleri kategorilere ayır
     products_by_cat = {}
     for p in prods:
         if p.category not in products_by_cat: products_by_cat[p.category] = []
@@ -417,7 +436,7 @@ def init_db():
 
     today = datetime.datetime.utcnow()
     
-    # 3 Rastgele Outlier Günü
+    # 3 Rastgele Outlier Günü Seç
     days_range = list(range(1, 29))
     outlier_deltas = random.sample(days_range, 3) 
     outlier_dates = [(today - datetime.timedelta(days=d)).strftime('%Y-%m-%d') for d in outlier_deltas]
@@ -430,20 +449,29 @@ def init_db():
         current_date = today - datetime.timedelta(days=delta)
         date_str = current_date.strftime('%Y-%m-%d')
         
-        daily_active_users_count = random.randint(15, 40)
+        # --- NORMAL TRAFİK SİMÜLASYONU ---
+        # Günlük 10-100 arası satış hacmi oluşturmak için rastgele sayıda aktif kullanıcı seç
+        daily_active_users_count = random.randint(10, 40)
         daily_users = random.sample(all_users, daily_active_users_count)
         
         for u in daily_users:
-            cats = random.sample(list(products_by_cat.keys()), k=random.randint(1, 3))
+            # Her kullanıcı her kategoriden rastgele 3 ürün seçsin (Prompt isteği)
+            # Ancak çok fazla kategori varsa bunu sınırlayabiliriz, şimdilik kategorilerden rastgele ürünler seçtiriyoruz.
+            # Her kategoriden 3 ürün almak yerine, rastgele 3-5 işlem yaptırıyoruz ki dağılım doğal olsun.
             
-            for cat in cats:
-                p = random.choice(products_by_cat[cat])
+            # Rastgele 3 ürün seç
+            selected_prods = random.sample(prods, 3)
+            
+            for p in selected_prods:
+                # Miktar: Minimum 1, Maksimum 5
                 qty = random.randint(1, 5)
-                click_count = random.randint(qty * 3, qty * 6)
                 
+                # Tıklanma sayısı (Alımdan biraz fazla olsun)
+                click_count = qty + random.randint(1, 5)
                 for _ in range(click_count):
                     bulk_clicks.append(ClickLog(user_id=u.id, product_id=p.id, timestamp=current_date))
 
+                # Satın alma kaydı (Adet sütunu olmadığı için satır satır ekliyoruz)
                 for _ in range(qty):
                     bulk_purchases.append(PurchaseLog(
                         user_id=u.id, product_id=p.id, 
@@ -451,15 +479,20 @@ def init_db():
                         timestamp=current_date
                     ))
 
+        # --- OUTLIER (BALİNA) SİMÜLASYONU ---
         if date_str in outlier_dates:
             whale_user = random.choice(all_users)
             whale_product = random.choice(prods)
-            whale_qty = random.randint(500, 1000)
-            print(f"!!! OUTLIER: {date_str} - {whale_user.username} - {whale_qty} adet")
             
-            for _ in range(int(whale_qty * 1.1)):
+            # O gün normalde 1-5 alan biri yerine, 50-100 adet alan biri olsun
+            whale_qty = random.randint(50, 100)
+            print(f"!!! OUTLIER: {date_str} - {whale_user.username} - {whale_product.name} - {whale_qty} adet")
+            
+            # Balina tıklamaları
+            for _ in range(int(whale_qty * 1.2)):
                 bulk_clicks.append(ClickLog(user_id=whale_user.id, product_id=whale_product.id, timestamp=current_date))
 
+            # Balina alımları
             for _ in range(whale_qty):
                 bulk_purchases.append(PurchaseLog(
                     user_id=whale_user.id, product_id=whale_product.id, 
@@ -467,11 +500,11 @@ def init_db():
                     timestamp=current_date
                 ))
 
-    print("Veriler kaydediliyor...")
+    print("Veriler kaydediliyor (Biraz sürebilir)...")
     db.session.bulk_save_objects(bulk_clicks)
     db.session.bulk_save_objects(bulk_purchases)
     db.session.commit()
-    print("BİTTİ.")
+    print("BİTTİ. Veritabanı hazır.")
 
 if __name__ == '__main__':
     app.run(debug=True)
