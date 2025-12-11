@@ -1,6 +1,8 @@
 import os
 import random
 import datetime
+import statistics
+from collections import Counter
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
@@ -35,14 +37,11 @@ class User(UserMixin, db.Model):
     
     @property
     def age(self):
-        if not self.birth_date: return 25 # Varsayılan yaş
+        if not self.birth_date: return 25 
         today = datetime.date.today()
         b_date = self.birth_date
-        # SQLite tarih formatı hatasını önleyen blok
         if isinstance(b_date, str):
-            try:
-                # Farklı formatları dene
-                b_date = datetime.datetime.strptime(b_date, '%Y-%m-%d').date()
+            try: b_date = datetime.datetime.strptime(b_date, '%Y-%m-%d').date()
             except:
                 try: b_date = datetime.datetime.strptime(b_date, '%Y-%m-%d %H:%M:%S.%f').date()
                 except: return 25
@@ -144,21 +143,29 @@ def buy_now():
     db.session.commit()
     return jsonify({'success': True, 'message': f'{data["color"]} rengi satın alındı.'})
 
-# --- ADMIN PANELİ ---
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
     if not current_user.is_admin: return "Yetkisiz", 403
 
+    # Boş veri yapısı (Hata durumunda dönecek)
+    default_data = {
+        'pop_data': {'labels': [], 'clicks': [], 'purchases': []},
+        'gender_data': {'labels': [], 'data': []},
+        'segment_gender_data': {'labels': [], 'male': [], 'female': [], 'avg_age': []},
+        'segment_cat_data': {'labels': [], 'datasets': []},
+        'outlier_data': {'labels': [], 'data': [], 'outliers': [], 'clean_data': [], 'details': []}
+    }
+
     try:
         # 1. Popülerlik
         top_prods = db.session.query(Product, func.count(ClickLog.id).label('clicks'))\
             .outerjoin(ClickLog).group_by(Product.id).order_by(desc('clicks')).limit(10).all()
+        
         pop_data = {'labels': [], 'clicks': [], 'purchases': []}
         for p, c in top_prods:
             pop_data['labels'].append(p.name)
             pop_data['clicks'].append(c)
-            # Kesin sayı al
             p_count = db.session.query(func.count(PurchaseLog.id)).filter(PurchaseLog.product_id == p.id).scalar()
             pop_data['purchases'].append(p_count)
 
@@ -168,10 +175,14 @@ def admin_dashboard():
         for g, c in gender_stats: g_map[g] = c
         gender_data = {'labels': ['Erkek', 'Kadın'], 'data': [g_map['E'], g_map['K']]}
 
-        # 3. YENİ SEGMENT ANALİZİ - 1: Cinsiyet ve Harcama
-        # SQL yerine Python ile yapalım, hata riskini sıfırlar
+        # 3. Segment Analizleri Hazırlık
         all_purchases = db.session.query(PurchaseLog).all()
         
+        # Eğer hiç satış yoksa boş dön
+        if not all_purchases:
+            return render_template('dashboard.html', **default_data)
+
+        # Segmentasyon Verileri
         segments = {}
         for p in all_purchases:
             u = p.user
@@ -190,46 +201,110 @@ def admin_dashboard():
             avg = round(sum(val['ages']) / len(val['ages']), 1) if val['ages'] else 0
             segment_gender_data['avg_age'].append(avg)
 
-        # 4. KATEGORİ TERCİHİ
+        # Kategori
         cat_segments = {}
         all_categories = set()
-        
         for p in all_purchases:
-            u = p.user
-            prod = p.product
-            key = f"{u.city} - {u.job}"
-            cat = prod.category
-            
+            key = f"{p.user.city} - {p.user.job}"
+            cat = p.product.category
             if key not in cat_segments: cat_segments[key] = {}
             if cat not in cat_segments[key]: cat_segments[key][cat] = 0
             cat_segments[key][cat] += 1
             all_categories.add(cat)
         
         all_categories = sorted(list(all_categories))
-        labels = segment_gender_data['labels']
-        
-        segment_cat_data = {'labels': labels, 'datasets': []}
+        seg_labels = segment_gender_data['labels']
+        segment_cat_data = {'labels': seg_labels, 'datasets': []}
         for cat in all_categories:
             data_points = []
-            for label in labels:
+            for label in seg_labels:
                 val = cat_segments.get(label, {}).get(cat, 0)
                 data_points.append(val)
             segment_cat_data['datasets'].append({'label': cat, 'data': data_points})
 
+        # ---------------------------------------------
+        # 4. OUTLIER ANALİZİ VE DETAYLANDIRMA
+        # ---------------------------------------------
+        
+        # Günlük satışları ve o gün satılan ürünleri grupla
+        # daily_products yapısı: { '2025-10-12': [PurchaseLogObj, PurchaseLogObj...] }
+        daily_products = {}
+        date_counts = {}
+
+        for p in all_purchases:
+            d_str = p.timestamp.strftime('%Y-%m-%d')
+            date_counts[d_str] = date_counts.get(d_str, 0) + 1
+            if d_str not in daily_products: daily_products[d_str] = []
+            daily_products[d_str].append(p)
+
+        outlier_data = {'labels': [], 'data': [], 'outliers': [], 'clean_data': [], 'details': []}
+
+        if date_counts:
+            sorted_dates = sorted(date_counts.keys())
+            counts = [date_counts[d] for d in sorted_dates]
+
+            # İstatistik
+            if len(counts) > 1:
+                mean = statistics.mean(counts)
+                stdev = statistics.stdev(counts)
+            else:
+                mean = counts[0]
+                stdev = 0 # Tek veri varsa sapma 0
+            
+            # Eşik Değer (Outlier Sınırı)
+            threshold = mean + (2 * stdev) if stdev > 0 else mean + 1
+
+            outlier_data['labels'] = sorted_dates
+            outlier_data['data'] = counts
+            outlier_data['threshold'] = round(threshold, 2)
+
+            outliers_arr = []
+            clean_arr = []
+            details_list = []
+
+            for i, c in enumerate(counts):
+                date_key = sorted_dates[i]
+                
+                if c > threshold:
+                    # BU BİR OUTLIER! DETAY ANALİZİ YAP.
+                    outliers_arr.append(c)
+                    clean_arr.append(mean) # Grafikte düzeltilmiş hali
+
+                    # O gün satılan ürünleri analiz et
+                    days_sales = daily_products[date_key]
+                    prod_names = [sale.product.name for sale in days_sales]
+                    cat_names = [sale.product.category for sale in days_sales]
+
+                    # En çok satılan ürün ve kategori
+                    top_prod = Counter(prod_names).most_common(1)[0] # ('Ürün Adı', Adet)
+                    top_cat = Counter(cat_names).most_common(1)[0]   # ('Kategori', Adet)
+
+                    details_list.append({
+                        'date': date_key,
+                        'total_sales': c,
+                        'top_product': f"{top_prod[0]} ({top_prod[1]} adet)",
+                        'top_category': f"{top_cat[0]} ({top_cat[1]} adet)",
+                        'status': 'Aşırı Yüksek (Outlier)'
+                    })
+                else:
+                    outliers_arr.append(None)
+                    clean_arr.append(c)
+
+            outlier_data['outliers'] = outliers_arr
+            outlier_data['clean_data'] = clean_arr
+            outlier_data['details'] = details_list
+
     except Exception as e:
-        print(f"HATA: {e}")
-        pop_data = {'labels': [], 'clicks': [], 'purchases': []}
-        gender_data = {'labels': [], 'data': []}
-        segment_gender_data = {'labels': [], 'male': [], 'female': [], 'avg_age': []}
-        segment_cat_data = {'labels': [], 'datasets': []}
+        print(f"DASHBOARD HATASI: {e}")
+        return render_template('dashboard.html', **default_data)
 
     return render_template('dashboard.html', 
                            pop_data=pop_data, 
                            gender_data=gender_data, 
                            segment_gender_data=segment_gender_data, 
-                           segment_cat_data=segment_cat_data)
+                           segment_cat_data=segment_cat_data,
+                           outlier_data=outlier_data)
 
-# --- AUTH ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -260,7 +335,6 @@ def login():
 @app.route('/logout')
 def logout(): logout_user(); return redirect(url_for('index'))
 
-# --- BURASI DEĞİŞTİ: ZORLA VERİ DOLDURMA ---
 @app.cli.command('init-db')
 def init_db():
     db.drop_all()
@@ -286,7 +360,6 @@ def init_db():
     cities = ["İstanbul", "Ankara", "İzmir", "Bursa", "Antalya"]
     
     users = []
-    # 80 KULLANICI OLUŞTURUYORUZ
     for i in range(80):
         edu = random.choice(list(jobs.keys()))
         u = User(username=f"user{i}", gender=random.choice(['E','K']), 
@@ -301,18 +374,24 @@ def init_db():
     prods = Product.query.all()
     colors = list(COLOR_CODES.keys())
     
-    # HER KULLANICIYA ZORLA 5-10 ÜRÜN ALDIRIYORUZ (RANDOM YOK)
     for u in users:
         count = random.randint(5, 10)
         for _ in range(count):
             p = random.choice(prods)
-            # Tıkla
             db.session.add(ClickLog(user_id=u.id, product_id=p.id))
-            # Satın Al (KESİN)
-            db.session.add(PurchaseLog(user_id=u.id, product_id=p.id, selected_color=random.choice(colors)))
+            
+            # Simülasyon: Son 30 gün içinde rastgele dağılım
+            # ANCAK Outlier oluşturmak için %15 ihtimalle "BUGÜN"e yığıyoruz.
+            delta = random.randint(0, 30)
+            if random.random() < 0.15: # Outlier ihtimali
+                final_date = datetime.datetime.utcnow()
+            else:
+                final_date = datetime.datetime.utcnow() - datetime.timedelta(days=delta)
+
+            db.session.add(PurchaseLog(user_id=u.id, product_id=p.id, selected_color=random.choice(colors), timestamp=final_date))
             
     db.session.commit()
-    print("HAZIR! Veritabanında binlerce kayıt var. Grafikler dolu gelecek.")
+    print("HAZIR! Veriler yüklendi.")
 
 if __name__ == '__main__':
     app.run(debug=True)
