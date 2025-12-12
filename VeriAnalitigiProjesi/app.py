@@ -18,7 +18,11 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# --- MODELLER ---
+
+
+# Verilerin Tutulduğu Sınıf Yapıları
+
+# Kullanıcı detayları
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), unique=True, nullable=False)
@@ -47,12 +51,14 @@ class User(UserMixin, db.Model):
                 except: return 25
         return today.year - b_date.year - ((today.month, today.day) < (b_date.month, b_date.day))
 
+# Ürün bilgileri
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
     category = db.Column(db.String(100), nullable=False)
     price = db.Column(db.Float, nullable=False)
 
+# Ürün sayfasına tıklanma verileri
 class ClickLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
@@ -61,6 +67,7 @@ class ClickLog(db.Model):
     user = db.relationship('User', backref='clicks')
     product = db.relationship('Product', backref='clicks')
 
+# Ürün alım verileri
 class PurchaseLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
@@ -70,18 +77,21 @@ class PurchaseLog(db.Model):
     user = db.relationship('User', backref='purchases')
     product = db.relationship('Product', backref='purchases')
 
+
+
+# Giriş yapan kullanıcıyı ID'sinden tanıma
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
-
-@app.context_processor
-def inject_cart_count():
-    return dict(cart_item_count=0)
 
 COLOR_CODES = {'Siyah': '000000', 'Beyaz': 'F5F5F5', 'Mavi': '0000FF', 'Kırmızı': 'FF0000', 'Yeşil': '008000'}
 ALL_COLORS = list(COLOR_CODES.keys())
 
 # --- ROUTE'LAR ---
+
+# Ana Sayfa 
+# ürünleri belirtilen kategoriye, aramaya ya da sıralama isteğine göre veritabanından ilgili verileri çekiyor.
+# popülerliğe göre sıralamda ClickLog tablosu kullanılıyor
 @app.route('/')
 def index():
     q = request.args.get('q', '')
@@ -91,11 +101,16 @@ def index():
     query = db.session.query(Product).outerjoin(ClickLog).group_by(Product.id)
     if q: 
         query = query.filter(or_(Product.name.ilike(f'%{q}%'), Product.category.ilike(f'%{q}%')))
-    if category: query = query.filter(Product.category == category)
+    if category: 
+        query = query.filter(Product.category == category)
 
-    if sort == 'price_asc': query = query.order_by(Product.price.asc())
-    elif sort == 'price_desc': query = query.order_by(Product.price.desc())
-    else: query = query.order_by(func.count(ClickLog.id).desc())
+    # A'dan Z'ye, Z'den A'ya ya da tıklanma sayısına göre sıralama 
+    if sort == 'price_asc': 
+        query = query.order_by(Product.price.asc())
+    elif sort == 'price_desc': 
+        query = query.order_by(Product.price.desc())
+    else: 
+        query = query.order_by(func.count(ClickLog.id).desc())
 
     products = query.all()
     prod_list = []
@@ -106,6 +121,10 @@ def index():
     categories = [c[0] for c in db.session.query(Product.category).distinct()]
     return render_template('index.html', products=prod_list, categories=categories, current_filters={'q': q, 'category': category, 'sort': sort})
 
+# Ürün Detay Sayfası
+# Kullanıcı sayfaya girdiği an ClickLog kaydı atar
+# Ürünün renk seçim grafiklerini sunar
+# Ürünün son 1 aylık alım grafiğini outlier analizi ve analiz sonucu optimize edilmiş grafikleri sunar.
 @app.route('/product/<int:product_id>')
 def product_detail(product_id):
     product = Product.query.get_or_404(product_id)
@@ -123,21 +142,32 @@ def product_detail(product_id):
     
     color_dist = {c: 0 for c in ALL_COLORS} 
     for p in purchases:
-        if p.selected_color in color_dist: color_dist[p.selected_color] += 1
+        if p.selected_color in color_dist: 
+            color_dist[p.selected_color] += 1
             
     age_groups = ['18-25', '26-40', '40+']
     age_color_matrix = {grp: {c: 0 for c in ALL_COLORS} for grp in age_groups}
     for p in purchases:
         age = p.user.age
-        grp = '18-25' if age <= 25 else '26-40' if age <= 40 else '40+'
-        c = p.selected_color
-        if c in age_color_matrix[grp]: age_color_matrix[grp][c] += 1
 
-    # Ürün detay sayfasında outlier hesabı (Düzeltme Mantığı: Balina Çıkarma)
+        if age <= 25:
+            grp = '18-25' 
+        elif age <= 40:
+            grp = '26-40'
+        else:
+            grp = '40+'
+
+        c = p.selected_color
+        if c in age_color_matrix[grp]: 
+            age_color_matrix[grp][c] += 1
+
+
+    # Outlier Analizi - Whale Algoritması
+    # "Whale" müşteriyi bulup istatistikten düşmek, bu sayede optimize grafik elimizde olur
+
     prod_outlier_data = {'labels': [], 'data': [], 'clean_data': []}
     if current_user.is_authenticated and current_user.is_admin:
         try:
-            # {tarih: {total: 5, purchases: [1, 1, 1, 1, 1]}}
             date_map = {}
             for p in purchases:
                 d_str = p.timestamp.strftime('%Y-%m-%d')
@@ -150,6 +180,7 @@ def product_detail(product_id):
                 
                 if len(counts) > 1:
                     mean = statistics.mean(counts)
+                    print(mean)
                     stdev = statistics.stdev(counts)
                 else:
                     mean = counts[0]; stdev = 0
@@ -163,8 +194,8 @@ def product_detail(product_id):
                 clean_arr = []
                 
                 for i, c in enumerate(counts):
+                    # Outlier tespit etme
                     if c > threshold:
-                        # Outlier tespit edildi
                         outliers_arr.append(c)
                         
                         # O gün bu ürünü en çok alan kişiyi (Balina) bul
@@ -183,11 +214,17 @@ def product_detail(product_id):
         except Exception as e:
             print(f"Prod Detail Chart Error: {e}")
 
-    return render_template('product.html', product=product, current_image=dynamic_img, 
-                           selected_color=selected_color, colors=ALL_COLORS, 
-                           color_dist=color_dist, age_color_matrix=age_color_matrix,
-                           prod_outlier_data=prod_outlier_data)
-
+    return render_template('product.html', 
+                            product=product,
+                            current_image=dynamic_img,
+                            selected_color=selected_color,
+                            colors=ALL_COLORS,
+                            color_dist=color_dist,
+                            age_color_matrix=age_color_matrix,
+                            prod_outlier_data=prod_outlier_data)
+# Satın Alma İşlemi
+# Hızlı satın alma
+# X ürününü Y renkte satın aldı
 @app.route('/buy_now', methods=['POST'])
 @login_required
 def buy_now():
@@ -196,6 +233,11 @@ def buy_now():
     db.session.commit()
     return jsonify({'success': True, 'message': f'{data["color"]} rengi satın alındı.'})
 
+
+# Yönetici Paneli
+# Tüm verileri harmanlar, popüler ürünlerin tıklanma-alımı, kullanıcı cinsiyet dağılımı, şehir-meslek-kategori bazlı segmentasyon
+# Global Outlier Analizi, son 30 güne bakar, standart sapmanın 2 katından fazla satış olan günleri,
+# ardından o günkü anomaliye sebep olan "Whale" müşteriyi bulur ve temizleyip raporlar
 @app.route('/admin/dashboard')
 @login_required
 def admin_dashboard():
@@ -357,6 +399,9 @@ def admin_dashboard():
                            segment_cat_data=segment_cat_data,
                            outlier_data=outlier_data)
 
+
+# Yetkilendirme Fonksiyonları
+# Klasik giriş çıkış işlemleri
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -385,7 +430,17 @@ def login():
     return render_template('login.html')
 
 @app.route('/logout')
-def logout(): logout_user(); return redirect(url_for('index'))
+def logout(): 
+    logout_user() 
+    return redirect(url_for('index'))
+
+
+# Veri Oluşturma Fonksiyonu
+# Eski veri tabanını silip sıfırdan kurar
+# Sahte trafik yaratır
+# Her güne normal satış yaptırır
+# Rastgele 2 güne bilerek Outlier çıkartacak şekilde anormal veri sokar,
+# bu sayede analiz tarafında karşımıza çıkabilsin
 
 @app.cli.command('init-db')
 def init_db():
@@ -405,15 +460,26 @@ def init_db():
     for n, c, p in names: db.session.add(Product(name=n, category=c, price=p))
     db.session.commit()
     
+
+    # Yönetici Paneli yetkisi için statik admin kullanıcısı oluşturuyoruz
     print("2. Kullanıcılar Ekleniyor...")
-    db.session.add(User(username="admin", gender="E", birth_date=datetime.date(1990,1,1), education="Yuksek", city="İstanbul", job="Yönetici", is_admin=True, password_hash=generate_password_hash("123")))
+    db.session.add(User(username="admin", 
+        gender="E", 
+        birth_date=datetime.date(1990,1,1), 
+        education="Yuksek", 
+        city="İstanbul", 
+        job="Yönetici", 
+        is_admin=True, 
+        password_hash=generate_password_hash("123")))
     
-    jobs = {"Lise": ["Öğrenci", "Garson", "Kasiyer"], "Lisans": ["Mühendis", "Öğretmen", "Yazılımcı"], "Yuksek": ["Doktor", "Avukat", "Akademisyen"]}
+    jobs = {"Lise": ["Öğrenci", "Garson", "Kasiyer"], 
+        "Lisans": ["Mühendis", "Öğretmen", "Yazılımcı"], 
+        "Yuksek": ["Doktor", "Avukat", "Akademisyen"]}
+
     cities = ["İstanbul", "Ankara", "İzmir", "Bursa", "Antalya"]
     
-    # Kullanıcı sayısını arttırdık (120)
     users = []
-    for i in range(120):
+    for i in range(200):
         edu = random.choice(list(jobs.keys()))
         u = User(username=f"user{i}", gender=random.choice(['E','K']), 
                  birth_date=datetime.date(random.randint(1980, 2005), 1, 1),
@@ -438,7 +504,7 @@ def init_db():
     
     # 3 Rastgele Outlier Günü Seç
     days_range = list(range(1, 29))
-    outlier_deltas = random.sample(days_range, 3) 
+    outlier_deltas = random.sample(days_range, 2) 
     outlier_dates = [(today - datetime.timedelta(days=d)).strftime('%Y-%m-%d') for d in outlier_deltas]
     print(f"Outlier Günleri: {outlier_dates}")
 
@@ -449,13 +515,13 @@ def init_db():
         current_date = today - datetime.timedelta(days=delta)
         date_str = current_date.strftime('%Y-%m-%d')
         
-        # --- NORMAL TRAFİK SİMÜLASYONU ---
+        # Normal Trafik Verisi Üretimi
         # Günlük 10-100 arası satış hacmi oluşturmak için rastgele sayıda aktif kullanıcı seç
         daily_active_users_count = random.randint(10, 40)
         daily_users = random.sample(all_users, daily_active_users_count)
         
         for u in daily_users:
-            # Her kullanıcı her kategoriden rastgele 3 ürün seçsin (Prompt isteği)
+            # Her kullanıcı her kategoriden rastgele 3 ürün seçsin
             # Ancak çok fazla kategori varsa bunu sınırlayabiliriz, şimdilik kategorilerden rastgele ürünler seçtiriyoruz.
             # Her kategoriden 3 ürün almak yerine, rastgele 3-5 işlem yaptırıyoruz ki dağılım doğal olsun.
             
@@ -479,13 +545,13 @@ def init_db():
                         timestamp=current_date
                     ))
 
-        # --- OUTLIER (BALİNA) SİMÜLASYONU ---
+        # Outlier veri üretimi
         if date_str in outlier_dates:
             whale_user = random.choice(all_users)
             whale_product = random.choice(prods)
             
             # O gün normalde 1-5 alan biri yerine, 50-100 adet alan biri olsun
-            whale_qty = random.randint(50, 100)
+            whale_qty = random.randint(200, 500)
             print(f"!!! OUTLIER: {date_str} - {whale_user.username} - {whale_product.name} - {whale_qty} adet")
             
             # Balina tıklamaları
