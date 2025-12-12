@@ -1,0 +1,69 @@
+{% extends 'layout.html' %}
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="card p-3 border-0 shadow-sm">
+            <h5 class="mb-3">Filtrele</h5>
+            <form action="{{ url_for('index') }}">
+                <input type="hidden" name="q" value="{{ current_filters.q }}">
+                <select name="category" class="form-select mb-3" onchange="this.form.submit()">
+                    <option value="">Tüm Kategoriler</option>
+                    {% for c in categories %}
+                    <option value="{{ c }}" {% if current_filters.category == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+                <select name="sort" class="form-select mb-3" onchange="this.form.submit()">
+                    <option value="" {% if not current_filters.sort %}selected{% endif %}>🔥 En Popüler</option>
+                    <option value="price_asc" {% if current_filters.sort == 'price_asc' %}selected{% endif %}>Fiyat: Artan</option>
+                    <option value="price_desc" {% if current_filters.sort == 'price_desc' %}selected{% endif %}>Fiyat: Azalan</option>
+                </select>
+                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary w-100 btn-sm"><i class="bi bi-x-circle"></i> Filtreleri Temizle</a>
+            </form>
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="row row-cols-1 row-cols-md-3 g-4">
+            {% for item in products %}
+            <div class="col">
+                <div class="card h-100 border-0 shadow-sm product-card">
+                    <a href="{{ url_for('product_detail', product_id=item.obj.id) }}" class="text-decoration-none text-dark">
+                        <img src="{{ item.img }}" class="card-img-top p-3" alt="{{ item.obj.name }}">
+                        <div class="card-body text-center">
+                            <h5 class="card-title fw-bold">{{ item.obj.name }}</h5>
+                            <span class="badge bg-light text-dark mb-2">{{ item.obj.category }}</span>
+                            <h4 class="text-danger fw-bold">{{ item.obj.price }} TL</h4>
+                        </div>
+                    </a>
+                    <div class="card-footer bg-white border-0 pb-3 px-3">
+                        <button onclick="quickBuy({{ item.obj.id }}, '{{ item.obj.name }}')" class="btn btn-success w-100 fw-bold">
+                            <i class="bi bi-bag-check"></i> HEMEN AL
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+    // Hızlı satın alma fonksiyonu
+    // pid: Satın alınacak ürünün benzersiz ID numarası (Product ID)
+    // name: Kullanıcıya bildirim gösterirken kullanılacak ürün adı
+    function quickBuy(pid, name) {
+        fetch('/buy_now', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            // color: 'Standart' olarak sabit gönderiliyor çünkü listeden hızlı alımda renk seçimi yok
+            body: JSON.stringify({ product_id: pid, color: 'Standart' })
+        })
+        .then(res => res.json())
+        .then(data => {
+            // Layout.html'deki showNotification'ı çağır
+            // Layout.html'deki showNotification fonksiyonunu tetikler
+            // name + mesaj birleştirilerek ekrana basılır
+            showNotification(name + " başarıyla satın alındı!");
+        });
+    }
+</script>
+{% endblock %}
