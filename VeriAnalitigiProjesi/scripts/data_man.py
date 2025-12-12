@@ -75,25 +75,11 @@ def product_detail(product_id):
         db.session.add(ClickLog(user_id=current_user.id, product_id=product.id))
         db.session.commit()
 
-    # ürünle alakalı bilgileri alma
-    clicks = ClickLog.query.filter_by(product_id=product.id).count()
-    purchases = PurchaseLog.query.filter_by(product_id=product.id).count()
-    rate = round((purchases / clicks) * 100, 2) if clicks > 0 else 0
-
-    stats = {"clicks": clicks, "purchases": purchases, "rate": rate}
-
-    # ürünün resmini oluşturma
-    hex_code = COLOR_CODES.get(selected_color, "000000")
-    text_c = "000000" if selected_color == "Beyaz" else "FFFFFF"
-    dynamic_img = f"https://placehold.co/500x500/{hex_code}/{text_c}/png?text={product.name.replace(' ', '+')}+({selected_color})"
-
-    # ürün renk tercih verilerini alma
+    # ürünün tüm satış verilerini alıyoruz, OUTLIER ANALİZİ İÇİN BU GEREKLİ
     purchases_list = PurchaseLog.query.filter_by(product_id=product.id).all()
-    color_dist = {c: 0 for c in ALL_COLORS}
-    for p in purchases_list:
-        if p.selected_color in color_dist:
-            color_dist[p.selected_color] += 1
-
+    
+    # default olarak temizlenmiş satış sayısı tüm satışlar olsun
+    clean_purchases_count = len(purchases_list)
     prod_outlier_data = {"labels": [], "data": [], "clean_data": []}
 
     # kullanıcı admin mi kontrolü
@@ -131,22 +117,58 @@ def product_detail(product_id):
                 # eğer o günkü satış anormallik sınırını aşarsa;
                 # o gün alışveriş yapanları alır, en çok alışveriş yapanı (Whale) bulur
                 # onu toplam satıştan çıkartır, optimize grafik elimizde olur
+                whale_total_removed = 0 # Balinanın toplam alım miktarı
                 for i, c in enumerate(counts):
                     if c > threshold:
-                        outliers_arr.append(c)
                         users_on_day = date_map[sorted_dates[i]]
                         user_counts = Counter(users_on_day)
                         whale_qty = user_counts.most_common(1)[0][1]
-                        clean_arr.append(c - whale_qty)
+
+                        # sadece toplam satış yetmez, balina alımı da ortalamanın 2 katından büyükse outlier say
+                        if whale_qty > (mean * 2):
+                            outliers_arr.append(c)
+                            clean_arr.append(c - whale_qty)
+                            whale_total_removed += whale_qty # Balina alımını toplama ekle
+                        else:
+                            outliers_arr.append(None)
+                            clean_arr.append(c)
                     else:
                         outliers_arr.append(None)
                         clean_arr.append(c)
 
                 prod_outlier_data["outliers"] = outliers_arr
                 prod_outlier_data["clean_data"] = clean_arr
+                
+                # temizlenmiş satış sayısı hesaplama başlangıcı
+                clean_purchases_count = len(purchases_list) - whale_total_removed
+
+
         except Exception as e:
             print(f"Prod Detail Chart Error: {e}")
 
+    # ürünle alakalı bilgileri alma
+    clicks = ClickLog.query.filter_by(product_id=product.id).count()
+    # purchases = PurchaseLog.query.filter_by(product_id=product.id).count() # ESKİ SATIR
+    
+    # DÜZELTME: Dönüşüm oranı için temizlenmiş satış sayısını kullanıyoruz (clean_purchases_count)
+    purchases = clean_purchases_count # Yeni temizlenmiş satış sayısı
+    # DÜZELTME: Bu sayede Conversion Rate %100'ün üstüne çıkmaz.
+    rate = round((purchases / clicks) * 100, 2) if clicks > 0 else 0
+
+    stats = {"clicks": clicks, "purchases": purchases, "rate": rate}
+
+    # ürünün resmini oluşturma
+    hex_code = COLOR_CODES.get(selected_color, "000000")
+    text_c = "000000" if selected_color == "Beyaz" else "FFFFFF"
+    dynamic_img = f"https://placehold.co/500x500/{hex_code}/{text_c}/png?text={product.name.replace(' ', '+')}+({selected_color})"
+
+    # ürün renk tercih verilerini alma
+    # Bu listeyi zaten başta almıştık, tekrar almayalım, var olanı kullanalım: purchases_list
+    color_dist = {c: 0 for c in ALL_COLORS}
+    for p in purchases_list:
+        if p.selected_color in color_dist:
+            color_dist[p.selected_color] += 1
+            
     # gerekli parametreleri ürün sayfasına yönlendirir
     return render_template(
         "product.html",

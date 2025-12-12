@@ -125,66 +125,54 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   // MEVCUT GRAFİKLER
-  // En Popüler Ürünler Grafiği (Bar Chart)
   new Chart(document.getElementById('popChart'), {
       type: 'bar',
       data: {
-          // labels: X eksenindeki ürün isimleri (Python'dan pop_data.labels olarak gelir)
           labels: {{ pop_data.labels | tojson }},
           datasets: [
-              // label: Veri setinin adı, data: Sayısal veriler (Tıklama sayıları)
               { label: 'Tıklama', data: {{ pop_data.clicks | tojson }}, backgroundColor: 'rgba(54, 162, 235, 0.5)' },
-              // data: Sayısal veriler (Satın alma sayıları)
               { label: 'Satın Alma', data: {{ pop_data.purchases | tojson }}, backgroundColor: 'rgba(75, 192, 192, 0.8)' }
           ]
       },
-      // maintainAspectRatio: false -> Grafik kapsayıcı div'in boyutuna uyar, orantıyı bozabilir
       options: { maintainAspectRatio: false, responsive: true }
   });
 
-  // Cinsiyet Dağılımı Grafiği (Pie Chart)
   new Chart(document.getElementById('genderChart'), {
-      type: 'pie', // Pasta grafiği
+      type: 'pie',
       data: {
-          // labels: ['Erkek', 'Kadın'] gibi etiketler
           labels: {{ gender_data.labels | tojson }},
-          // data: Her bir dilimin sayısal büyüklüğü
           datasets: [{ data: {{ gender_data.data | tojson }}, backgroundColor: ['#36A2EB', '#FF6384'] }]
       },
       options: { maintainAspectRatio: false, responsive: true }
   });
 
-  // Şehir-Meslek Bazlı Cinsiyet Grafiği (Yatay Bar)
   const segGenderData = {{ segment_gender_data | tojson }};
   new Chart(document.getElementById('segmentGenderChart'), {
       type: 'bar',
       data: {
-          labels: segGenderData.labels, // Şehir ve Meslek kombinasyonları
+          labels: segGenderData.labels,
           datasets: [
-              // stack: 's1' -> Verilerin yan yana değil üst üste binmesini sağlar (Stacked Bar)
               { label: 'Erkek', data: segGenderData.male, backgroundColor: '#36A2EB', stack: 's1' },
               { label: 'Kadın', data: segGenderData.female, backgroundColor: '#FF6384', stack: 's1' }
           ]
       },
       options: {
-          indexAxis: 'y', // Grafiği yatay çevirir (Y ekseni ana eksen olur)
+          indexAxis: 'y',
           maintainAspectRatio: false,
           responsive: true,
           scales: { x: { stacked: true }, y: { stacked: true } }
       }
   });
 
-   // Şehir-Meslek Bazlı Kategori Tercihleri Grafiği
   const segCatData = {{ segment_cat_data | tojson }};
-  const colors = ['#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF'];// Renk havuzu
-  // map fonksiyonu ile her bir veri setine sırasıyla renk atanıyor ve stack 's2' olarak belirleniyor
+  const colors = ['#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#C9CBCF'];
   const datasets = segCatData.datasets.map((ds, i) => ({ ...ds, backgroundColor: colors[i % colors.length], stack: 's2' }));
 
   new Chart(document.getElementById('segmentCatChart'), {
       type: 'bar',
       data: { labels: segCatData.labels, datasets: datasets },
       options: {
-          indexAxis: 'y', // Yatay grafik
+          indexAxis: 'y',
           maintainAspectRatio: false,
           responsive: true,
           scales: { x: { stacked: true }, y: { stacked: true } }
@@ -192,30 +180,29 @@
   });
 
   // --- OUTLIER GRAFİKLERİ ---
-  // Python tarafından gönderilen outlier verisi
   const outlierData = {{ outlier_data | tojson }};
 
   new Chart(document.getElementById('outlierChart'), {
-      type: 'line', // Çizgi grafik
+      type: 'line',
       data: {
-          labels: outlierData.labels, // Tarihler
+          labels: outlierData.labels,
           datasets: [
               {
                   label: 'Günlük Toplam Satış',
-                  data: outlierData.data, // Ham satış verileri
+                  data: outlierData.data,
                   borderColor: '#e74c3c',
                   backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                  tension: 0, // Çizginin kavisini kapatır, düz çizgi yaptık
-                  fill: true // Çizginin altını boyadık
+                  tension: 0,
+                  fill: true
               },
               {
                   label: 'Aykırı Değer (Outlier)',
-                  data: outlierData.outliers, // Sadece outlier olan noktaların verisi (diğerleri null veya 0)
+                  data: outlierData.outliers,
                   backgroundColor: 'red',
                   borderColor: 'red',
-                  pointStyle: 'star', // Nokta şekli yıldız olur
-                  pointRadius: 8, // Nokta büyüklüğü
-                  showLine: false // Bu veri seti için çizgi çizmez, sadece nokta koyar
+                  pointStyle: 'star',
+                  pointRadius: 8,
+                  showLine: false
               }
           ]
       },
@@ -229,11 +216,11 @@
           labels: outlierData.labels,
           datasets: [{
               label: 'Optimize Edilmiş Akış',
-              data: outlierData.clean_data, // Outlier'lardan arındırılmış veri
+              data: outlierData.clean_data,
               borderColor: '#2ecc71',
               backgroundColor: 'rgba(46, 204, 113, 0.0)',
               borderWidth: 3,
-              tension: 0, // DÜZ ÇİZGİ (Kavis yok)
+              tension: 0, // DÜZ ÇİZGİ
               pointRadius: 4
           }]
       },
