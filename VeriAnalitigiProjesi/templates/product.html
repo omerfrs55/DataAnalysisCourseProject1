@@ -82,15 +82,20 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+  // Detay sayfasından satın alma fonksiyonu
+  // color: Kullanıcının seçtiği renk parametresi (Örn: 'Kırmızı')
   function buyDetail(color) {
       fetch('/buy_now', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
+          // Ürün ID'si backend'den template ile {{ product.id }} olarak gelir
           body: JSON.stringify({ product_id: {{ product.id }}, color: color })
       })
       .then(res => res.json())
       .then(data => {
+          // Bildirim göster
           showNotification(data.message);
+          // 2000ms (2 saniye) sonra sayfayı yenile ki stok/satış güncellensin
           setTimeout(() => location.reload(), 2000);
       });
   }
@@ -98,13 +103,15 @@
   // SADECE ADMIN VARSA GRAFİKLERİ ÇİZ
   {% if current_user.is_authenticated and current_user.is_admin %}
 
+  // Renk isimlerini CSS renk kodlarına eşleyen harita
   const colorMap = {
       'Siyah': '#000000', 'Beyaz': '#E0E0E0', 'Mavi': 'blue', 'Kırmızı': 'red', 'Yeşil': 'green'
   };
 
+  // Renk dağılım verisi (Pie Chart için)
   const colorDist = {{ color_dist | tojson }};
-  const labels = Object.keys(colorDist);
-  const bgColors = labels.map(l => colorMap[l] || '#ccc');
+  const labels = Object.keys(colorDist); // ['Siyah', 'Beyaz'...]
+  const bgColors = labels.map(l => colorMap[l] || '#ccc'); // Etiketlere uygun renk kodlarını seçer
 
   new Chart(document.getElementById('colorDistChart'), {
       type: 'pie',
@@ -115,14 +122,16 @@
       options: { maintainAspectRatio: false, responsive: true }
   });
 
-  const ageMatrix = {{ age_color_matrix | tojson }};
+  // Yaş Grubu ve Renk İlişkisi (Bar Chart)
+  const ageMatrix = {{ age_color_matrix | tojson }}; // { '18-25': {'Siyah': 10...}, ... }
   const colorsList = {{ colors | tojson }};
-  const ageLabels = Object.keys(ageMatrix);
+  const ageLabels = Object.keys(ageMatrix); // Yaş grupları
 
+  // Her renk için ayrı bir dataset oluşturuyoruz
   const ageDatasets = colorsList.map(c => ({
-      label: c,
-      data: ageLabels.map(grp => ageMatrix[grp][c]),
-      backgroundColor: colorMap[c] || '#ccc'
+      label: c, // Renk adı
+      data: ageLabels.map(grp => ageMatrix[grp][c]), // O yaş grubunun o renkteki alım sayısı
+      backgroundColor: colorMap[c] || '#ccc' // Çubuk rengi
   }));
 
   new Chart(document.getElementById('ageColorChart'), {
@@ -135,7 +144,7 @@
   const pData = {{ prod_outlier_data | tojson }};
 
   if(pData && pData.labels.length > 0) {
-      // 1. Ürün Outlier
+      // 1. Ürün Outlier Grafiği (Normal Satış + Anormallikler)
       new Chart(document.getElementById('prodOutlierChart'), {
           type: 'line',
           data: {
@@ -145,16 +154,16 @@
                       label: 'Satış Adedi',
                       data: pData.data,
                       borderColor: '#e74c3c',
-                      tension: 0
+                      tension: 0 // Düz çizgi
                   },
                   {
                       label: 'Outlier Noktası',
-                      data: pData.outliers,
+                      data: pData.outliers, // Sadece anormallik olan günler dolu gelir
                       backgroundColor: 'black',
                       borderColor: 'black',
-                      pointStyle: 'rectRot',
+                      pointStyle: 'rectRot', // Nokta şekli: Döndürülmüş dikdörtgen
                       pointRadius: 10,
-                      showLine: false
+                      showLine: false // Çizgi yok, sadece nokta
                   }
               ]
           },
@@ -168,11 +177,11 @@
               labels: pData.labels,
               datasets: [{
                   label: 'Optimize Akış',
-                  data: pData.clean_data,
+                  data: pData.clean_data, // Anormalliklerden temizlenmiş veri
                   borderColor: '#2ecc71',
                   backgroundColor: 'rgba(46, 204, 113, 0.2)',
                   fill: true,
-                  tension: 0 // DÜZ ÇİZGİ
+                  tension: 0 // DÜZ ÇİZGİ (Kıvrımsız)
               }]
           },
           options: { maintainAspectRatio: false, responsive: true }

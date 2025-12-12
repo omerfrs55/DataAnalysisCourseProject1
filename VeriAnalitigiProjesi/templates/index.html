@@ -47,15 +47,21 @@
 </div>
 
 <script>
+    // Hızlı satın alma fonksiyonu
+    // pid: Satın alınacak ürünün benzersiz ID numarası (Product ID)
+    // name: Kullanıcıya bildirim gösterirken kullanılacak ürün adı
     function quickBuy(pid, name) {
         fetch('/buy_now', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
+            // color: 'Standart' olarak sabit gönderiliyor çünkü listeden hızlı alımda renk seçimi yok
             body: JSON.stringify({ product_id: pid, color: 'Standart' })
         })
         .then(res => res.json())
         .then(data => {
             // Layout.html'deki showNotification'ı çağır
+            // Layout.html'deki showNotification fonksiyonunu tetikler
+            // name + mesaj birleştirilerek ekrana basılır
             showNotification(name + " başarıyla satın alındı!");
         });
     }
